@@ -37,6 +37,12 @@ app.use('/api/admin', adminRouter);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Free Pollinations is limited to 1 image / 45s per IP, which shared hosting IPs always exceed
+const pollinationsHeaders = () => ({
+  "User-Agent": "EvoPrint/1.0",
+  ...(process.env.POLLINATIONS_API_KEY && { Authorization: `Bearer ${process.env.POLLINATIONS_API_KEY}` })
+});
+
 // Health Check
 app.get("/health", (req, res) => {
   res.json({ status: "ok", message: "EvoPrint* Backend is running" });
@@ -291,7 +297,7 @@ app.post("/api/generate-image-evoprint", async (req, res) => {
     const response = await axios.get(url, {
       responseType: "arraybuffer",
       timeout: 120000,
-      headers: { "User-Agent": "EvoPrint/1.0" }
+      headers: pollinationsHeaders()
     });
 
     const base64      = Buffer.from(response.data).toString("base64");
@@ -329,7 +335,7 @@ app.post("/api/generate-image-flyerai", async (req, res) => {
     const response = await axios.get(url, {
       responseType: "arraybuffer",
       timeout: 120000,
-      headers: { "User-Agent": "EvoPrint/1.0" }
+      headers: pollinationsHeaders()
     });
 
     const base64      = Buffer.from(response.data).toString("base64");

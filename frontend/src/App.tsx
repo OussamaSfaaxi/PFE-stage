@@ -1,6 +1,22 @@
-import { useState, useEffect } from 'react'
+import { API_URL } from './api'
+import { useState } from 'react'
 import './App.css'
 import PrintModal from './components/PrintModal'
+import AuthPage from './components/AuthPage'
+import HistoryPage from './components/HistoryPage'
+import PaymentModal from './components/PaymentModal'
+import GalleryPage from './components/GalleryPage'
+import AdminPage from './components/AdminPage'
+
+interface User {
+  id: number
+  nom: string
+  prenom: string
+  email: string
+  role: string
+  plan: string
+  credits: number
+}
 
 interface GeminiResult {
   success: boolean;
@@ -17,7 +33,9 @@ interface ImageResult {
   message?: string;
 }
 
-function App() {
+// ─── Studio (main app, shown when logged in) ──────────────────────────────────
+function Studio({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const [view, setView] = useState<'studio' | 'history' | 'gallery' | 'admin'>('studio')
   const [prompt, setPrompt] = useState('')
   const [context, setContext] = useState('')
   const [model, setModel] = useState('stability')
@@ -29,13 +47,15 @@ function App() {
   const [results, setResults] = useState<ImageResult[]>([])
   const [error, setError] = useState<string | null>(null)
   const [selectedImageForPrint, setSelectedImageForPrint] = useState<ImageResult | null>(null)
+  const [paymentReason, setPaymentReason] = useState<'dalle_limit' | 'mj_nano_limit' | null>(null)
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)
 
   const handleEnhance = async () => {
     if (!prompt.trim()) return
     setEnhancing(true)
     setError(null)
     try {
-      const res = await fetch('http://localhost:3000/api/gemini-context', {
+      const res = await fetch(`${API_URL}/api/gemini-context`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, context, supportType, sector })
@@ -43,33 +63,84 @@ function App() {
       const data = await res.json()
       if (data.success) {
         setGeminiData(data)
-        // Auto-update prompt with enhanced version for better results
-        // setPrompt(data.enhancedPrompt) 
       } else {
         throw new Error(data.message || 'Gemini error')
       }
     } catch (err: any) {
-      const errorMsg = err.message || 'Une erreur est survenue';
+      const errorMsg = err.message || 'Une erreur est survenue'
       if (errorMsg.includes('503') || errorMsg.includes('surchargé')) {
-        setError("L'intelligence Gemini est très sollicitée en ce moment. Nous réessayons automatiquement... Veuillez patienter.");
+        setError("L'intelligence Gemini est très sollicitée en ce moment. Veuillez réessayer.")
       } else {
-        setError(`Erreur d'Optimisation: ${errorMsg}`);
+        setError(`Erreur d'Optimisation: ${errorMsg}`)
       }
     } finally {
-      setEnhancing(false);
+      setEnhancing(false)
+    }
+  }
+
+  const checkLimit = async (finalPrompt: string): Promise<boolean> => {
+    if (model === 'stability') return true
+    const token = localStorage.getItem('evoprint_token')
+    const res = await fetch(`${API_URL}/api/auth/check-limit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ model })
+    })
+    const data = await res.json()
+    if (!data.allowed) {
+      setPendingPrompt(finalPrompt)
+      setPaymentReason(data.reason)
+      return false
+    }
+    return true
+  }
+
+  const selectModel = async (m: string) => {
+    if (m === 'stability') { setModel(m); return }
+    const token = localStorage.getItem('evoprint_token')
+    const res = await fetch(`${API_URL}/api/auth/check-limit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ model: m })
+    })
+    const data = await res.json()
+    if (!data.allowed) {
+      setPaymentReason(data.reason)
+      setPendingPrompt(null)
+    }
+    setModel(m)
+  }
+
+
+  const saveToHistory = async (imageUrl: string, finalPrompt: string) => {
+    const token = localStorage.getItem('evoprint_token')
+    if (!token) { console.error('saveToHistory: token manquant'); return }
+    try {
+      const res = await fetch(`${API_URL}/api/auth/history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ prompt: finalPrompt, image_url: imageUrl, model, support_type: supportType, sector })
+      })
+      const data = await res.json()
+      if (!data.success) console.error('saveToHistory erreur:', data)
+    } catch (err) {
+      console.error('saveToHistory fetch error:', err)
     }
   }
 
   const handleGenerate = async (finalPrompt: string) => {
+    const allowed = await checkLimit(finalPrompt)
+    if (!allowed) return
     setLoading(true)
     setError(null)
-    const endpoint = model === 'dalle' ? 'generate-image-dalle' : 
-                     model === 'midjourney' ? 'generate-image-midjourney' : 
+    const endpoint = model === 'dalle'      ? 'generate-image-dalle' :
+                     model === 'midjourney' ? 'generate-image-midjourney' :
                      model === 'nanobanana' ? 'generate-image-nanobanana' :
+                     model === 'evoprint'   ? 'generate-image-evoprint' :
+                     model === 'flyerai'    ? 'generate-image-flyerai' :
                      'generate-image'
-    
     try {
-      const res = await fetch(`http://localhost:3000/api/${endpoint}`, {
+      const res = await fetch(`${API_URL}/api/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: finalPrompt })
@@ -77,6 +148,7 @@ function App() {
       const data = await res.json()
       if (res.ok) {
         setResults([data, ...results])
+        saveToHistory(data.imageUrl, finalPrompt)
       } else {
         setError(data.message || data.error || 'Generation failed')
       }
@@ -88,17 +160,69 @@ function App() {
   }
 
   const handleApply = () => {
-    if (geminiData?.enhancedPrompt) {
-      setPrompt(geminiData.enhancedPrompt)
-    }
+    if (geminiData?.enhancedPrompt) setPrompt(geminiData.enhancedPrompt)
   }
+
+  if (view === 'history') return <HistoryPage onBack={() => setView('studio')} />
+  if (view === 'admin') return (
+    <div className="container animate-fade">
+      <header className="header">
+        <div className="logo-section">
+          <h1>EvoPrint<span className="brand-star">*</span></h1>
+        </div>
+        <div className="user-info">
+          <span className="user-badge">⚙️ Admin</span>
+          <button className="logout-btn" onClick={onLogout}>🚪 Déconnexion</button>
+        </div>
+      </header>
+      <AdminPage token={localStorage.getItem('evoprint_token') || ''} onBack={() => setView('studio')} />
+    </div>
+  )
+  if (view === 'gallery') return (
+    <div className="container animate-fade">
+      <header className="header">
+        <div className="logo-section">
+          <h1>EvoPrint<span className="brand-star">*</span></h1>
+        </div>
+        <div className="user-info">
+          <span className="user-badge">👤 {user.prenom} {user.nom}</span>
+          <button className="history-nav-btn" onClick={() => setView('studio')}>🎨 Studio</button>
+          <button className="history-nav-btn" onClick={() => setView('history')}>🕐 Historique</button>
+          <button className="logout-btn" onClick={onLogout}>🚪 Déconnexion</button>
+        </div>
+      </header>
+      <GalleryPage userId={user.id} token={localStorage.getItem('evoprint_token') || ''} />
+    </div>
+  )
 
   return (
     <div className="container animate-fade">
       <header className="header">
         <div className="logo-section">
-          <h1>Intelligence Artificielle & Création automatisée de supports imprimés</h1>
-          <p className="subtitle">Générez des visuels haute qualité et transformez-les en supports marketing prêts à imprimer</p>
+          <h1>EvoPrint<span className="brand-star">*</span></h1>
+          <p className="subtitle">Générez des visuels haute qualité grâce à l'IA et transformez-les en supports marketing prêts à imprimer</p>
+        </div>
+        <div className="user-info">
+          <span className="user-badge">
+            👤 {user.prenom} {user.nom}
+          </span>
+          <span className="credits-badge">
+            ⭐ {user.credits} crédits
+          </span>
+          <button className="history-nav-btn" onClick={() => setView('history')}>
+            🕐 Historique
+          </button>
+          <button className="history-nav-btn" onClick={() => setView('gallery')}>
+            🖼 Galerie
+          </button>
+          {user.role === 'admin' && (
+            <button className="history-nav-btn admin-nav-btn" onClick={() => setView('admin')}>
+              ⚙️ Admin
+            </button>
+          )}
+          <button className="logout-btn" onClick={onLogout}>
+            🚪 Déconnexion
+          </button>
         </div>
       </header>
 
@@ -107,7 +231,7 @@ function App() {
         <div className="glass-card input-panel">
           <div className="input-group">
             <label>Votre Vision</label>
-            <textarea 
+            <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Décrivez l'image de vos rêves..."
@@ -117,7 +241,7 @@ function App() {
 
           <div className="input-group">
             <label>Contexte Optionnel</label>
-            <input 
+            <input
               value={context}
               onChange={(e) => setContext(e.target.value)}
               placeholder="Ex: Style Pixar, éclairage dramatique..."
@@ -146,18 +270,27 @@ function App() {
 
           <div className="controls">
             <div className="model-selector">
-              {['stability', 'dalle', 'midjourney', 'nanobanana'].map((m) => (
-                <button 
-                  key={m}
-                  className={`model-btn ${model === m ? 'active' : ''}`}
-                  onClick={() => setModel(m)}
+              {[
+                { id: 'stability',  label: 'STABILITY',    badge: '∞ Gratuit', paid: false },
+                { id: 'evoprint',   label: '✦ EVOPRINT',   badge: '∞ Gratuit', paid: false },
+                { id: 'flyerai',    label: '🖨 FLYER AI',   badge: '∞ Gratuit', paid: false },
+                { id: 'dalle',      label: 'DALL·E',       badge: '💳 Payant',  paid: true  },
+                { id: 'midjourney', label: 'MIDJOURNEY',   badge: '💳 Payant',  paid: true  },
+                { id: 'nanobanana', label: 'NANO 🍌',      badge: '💳 Payant',  paid: true  },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  className={`model-btn ${model === m.id ? 'active' : ''} ${m.paid ? 'model-btn-paid' : ''} ${m.id === 'evoprint' ? 'model-btn-evoprint' : ''} ${m.id === 'flyerai' ? 'model-btn-flyerai' : ''}`}
+                  onClick={() => selectModel(m.id)}
                 >
-                  {m === 'nanobanana' ? 'NANO 🍌' : m.toUpperCase()}
+                  <span>{m.label}</span>
+                  <span className="model-badge">{m.badge}</span>
                 </button>
               ))}
+
             </div>
-            
-            <button 
+
+            <button
               className={`enhance-btn ${enhancing ? 'loading' : ''}`}
               onClick={handleEnhance}
               disabled={!prompt || enhancing}
@@ -166,18 +299,18 @@ function App() {
             </button>
           </div>
 
-          <button 
+          <button
             className={`generate-btn ${loading ? 'loading' : ''}`}
             onClick={() => handleGenerate(prompt)}
             disabled={!prompt || loading}
           >
-            {loading ? 'Création de la magie...' : '🎨 Générer l\'Image'}
+            {loading ? 'Création de la magie...' : "🎨 Générer l'Image"}
           </button>
 
           {error && <div className="error-card">{error}</div>}
         </div>
 
-        {/* Right Side: Gemini Insights & Results */}
+        {/* Right Side: Gemini Insights */}
         <div className="glass-card side-panel">
           {geminiData ? (
             <div className="gemini-insights animate-fade">
@@ -190,15 +323,15 @@ function App() {
                 <div className="insight-header">
                   <small>Prompt Optimisé (English)</small>
                   <div className="insight-actions">
-                    <button 
-                      className="action-btn" 
+                    <button
+                      className="action-btn"
                       onClick={() => navigator.clipboard.writeText(geminiData.enhancedPrompt)}
                       title="Copier le prompt"
                     >
                       📋
                     </button>
-                    <button 
-                      className="apply-btn" 
+                    <button
+                      className="apply-btn"
                       onClick={handleApply}
                       title="Appliquer à Vision"
                     >
@@ -231,8 +364,8 @@ function App() {
               <img src={res.imageUrl} alt={res.prompt} loading="lazy" />
               <div className="card-info">
                 <p title={res.prompt}>{res.prompt}</p>
-                <button 
-                  className="card-print-btn" 
+                <button
+                  className="card-print-btn"
                   onClick={() => setSelectedImageForPrint(res)}
                   title="Personnaliser et Imprimer"
                 >
@@ -248,13 +381,48 @@ function App() {
       </section>
 
       {selectedImageForPrint && (
-        <PrintModal 
-          image={selectedImageForPrint} 
-          onClose={() => setSelectedImageForPrint(null)} 
+        <PrintModal
+          image={selectedImageForPrint}
+          onClose={() => setSelectedImageForPrint(null)}
+        />
+      )}
+
+      {paymentReason && (
+        <PaymentModal
+          reason={paymentReason}
+          onClose={() => { setPaymentReason(null); setPendingPrompt(null) }}
+          onSuccess={() => {
+            setPaymentReason(null)
+            if (pendingPrompt) handleGenerate(pendingPrompt)
+            setPendingPrompt(null)
+          }}
         />
       )}
     </div>
   )
+}
+
+// ─── Root App (auth gate) ─────────────────────────────────────────────────────
+function App() {
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('evoprint_user')
+    return saved ? JSON.parse(saved) : null
+  })
+
+  const handleLogin = (u: User, token: string) => {
+    localStorage.setItem('evoprint_token', token)
+    localStorage.setItem('evoprint_user', JSON.stringify(u))
+    setUser(u)
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('evoprint_token')
+    localStorage.removeItem('evoprint_user')
+    setUser(null)
+  }
+
+  if (!user) return <AuthPage onLogin={handleLogin} />
+  return <Studio user={user} onLogout={handleLogout} />
 }
 
 export default App

@@ -13,7 +13,25 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Auth routes
+const authRouter = require('./auth');
+app.use('/api/auth', authRouter);
+
+// Stripe routes
+const stripeRouter = require('./stripe');
+app.use('/api/stripe', stripeRouter);
+
+// Gallery routes
+const galleryRouter = require('./gallery');
+app.use('/api/gallery', galleryRouter);
+
+// Admin routes
+const adminRouter = require('./admin');
+app.use('/api/admin', adminRouter);
 
 // Initialize AI Clients
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -21,7 +39,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Health Check
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", message: "AI Studio Backend is running" });
+  res.json({ status: "ok", message: "EvoPrint* Backend is running" });
 });
 
 // ====================== STABILITY AI ======================
@@ -216,6 +234,116 @@ app.post("/api/generate-image-nanobanana", async (req, res) => {
       error: "Erreur Nano Banana via Fal.ai", 
       message: typeof errorData === 'object' ? JSON.stringify(errorData) : errorData 
     });
+  }
+});
+
+// ====================== EVOPRINT AI (Modèle personnalisé WikiArt) ======================
+app.post("/api/generate-image-evoprint", async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt) return res.status(400).json({ error: "Le prompt est requis" });
+
+    const CUSTOM_MODEL = process.env.EVOPRINT_MODEL_ID;
+    const HF_KEY       = process.env.HUGGINGFACE_API_KEY;
+
+    // ── Si le modèle custom est configuré → l'utiliser
+    if (CUSTOM_MODEL && HF_KEY) {
+      console.log(`✦ EvoPrint AI — modèle personnalisé: ${CUSTOM_MODEL}`);
+
+      // Enrichir le prompt avec le style WikiArt
+      const enrichedPrompt = `${prompt}, wikiart style, impressionist painting, fine art, museum quality, print ready, high detail`;
+
+      try {
+        const response = await axios.post(
+          `https://api-inference.huggingface.co/models/${CUSTOM_MODEL}`,
+          { inputs: enrichedPrompt },
+          {
+            headers: {
+              "Authorization": `Bearer ${HF_KEY}`,
+              "Content-Type": "application/json",
+              "Accept": "image/jpeg"
+            },
+            responseType: "arraybuffer",
+            timeout: 90000
+          }
+        );
+        const base64 = Buffer.from(response.data).toString("base64");
+        const ct     = response.headers["content-type"] || "image/jpeg";
+        return res.json({
+          success: true,
+          imageUrl: `data:${ct};base64,${base64}`,
+          prompt,
+          model: `EvoPrint AI (${CUSTOM_MODEL})`
+        });
+      } catch (hfErr) {
+        console.warn("HuggingFace indisponible, fallback Pollinations...");
+      }
+    }
+
+    // ── Fallback : Pollinations.ai (FLUX + style wikiart dans le prompt)
+    console.log("✦ EvoPrint AI — génération via Pollinations.ai (WikiArt style)...");
+
+    const styledPrompt  = `${prompt}, wikiart impressionist style, fine art painting, museum quality, oil on canvas`;
+    const encodedPrompt = encodeURIComponent(styledPrompt);
+    const seed          = Math.floor(Math.random() * 1000000);
+    const url           = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&seed=${seed}&nologo=true`;
+
+    const response = await axios.get(url, {
+      responseType: "arraybuffer",
+      timeout: 120000,
+      headers: { "User-Agent": "EvoPrint/1.0" }
+    });
+
+    const base64      = Buffer.from(response.data).toString("base64");
+    const contentType = response.headers["content-type"] || "image/jpeg";
+
+    res.json({
+      success: true,
+      imageUrl: `data:${contentType};base64,${base64}`,
+      prompt,
+      model: "EvoPrint AI (WikiArt FLUX)"
+    });
+
+  } catch (error) {
+    console.error("EvoPrint AI Error:", error.message);
+    res.status(500).json({ error: "Erreur EvoPrint AI", message: error.message });
+  }
+});
+
+// ====================== FLYER AI (LoRA fine-tuned on CGL-Dataset) ======================
+app.post("/api/generate-image-flyerai", async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt) return res.status(400).json({ error: "Le prompt est requis" });
+
+    const HF_KEY  = process.env.HUGGINGFACE_API_KEY;
+    const REPO_ID = "ouussma/flyer-lora-sd15";
+
+    const enrichedPrompt = `flyerprnt style, ${prompt}, professional flyer design, marketing print, high quality, graphic layout`;
+
+    // Pollinations avec trigger word LoRA
+    const encodedPrompt = encodeURIComponent(enrichedPrompt);
+    const seed = Math.floor(Math.random() * 1000000);
+    const url  = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&seed=${seed}&nologo=true`;
+
+    const response = await axios.get(url, {
+      responseType: "arraybuffer",
+      timeout: 120000,
+      headers: { "User-Agent": "EvoPrint/1.0" }
+    });
+
+    const base64      = Buffer.from(response.data).toString("base64");
+    const contentType = response.headers["content-type"] || "image/jpeg";
+
+    res.json({
+      success: true,
+      imageUrl: `data:${contentType};base64,${base64}`,
+      prompt,
+      model: "FLYER AI (fallback)"
+    });
+  } catch (error) {
+    console.error("FLYER AI Error:", error.message);
+    res.status(500).json({ error: "Erreur FLYER AI", message: error.message });
   }
 });
 

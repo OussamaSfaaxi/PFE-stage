@@ -1,7 +1,79 @@
+.brand-star {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-size: 2.5rem;
+  vertical-align: super;
+}
+
 .header {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 4rem;
   padding-top: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.logo-section {
+  text-align: left;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.user-badge, .credits-badge {
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 99px;
+  padding: .45rem 1rem;
+  font-size: .85rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.history-nav-btn {
+  background: rgba(99,102,241,.12);
+  border: 1px solid rgba(99,102,241,.25);
+  border-radius: 99px;
+  padding: .45rem 1.1rem;
+  font-size: .85rem;
+  font-weight: 600;
+  color: #a5b4fc;
+  cursor: pointer;
+  transition: background .2s, color .2s;
+}
+.history-nav-btn:hover {
+  background: rgba(99,102,241,.28);
+  color: #fff;
+}
+.admin-nav-btn {
+  background: rgba(251,191,36,.12);
+  border-color: rgba(251,191,36,.3);
+  color: #fbbf24;
+}
+.admin-nav-btn:hover { background: rgba(251,191,36,.25); color: #fde68a; }
+
+.logout-btn {
+  background: rgba(239,68,68,.12);
+  border: 1px solid rgba(239,68,68,.25);
+  border-radius: 99px;
+  padding: .45rem 1.1rem;
+  font-size: .85rem;
+  font-weight: 600;
+  color: #fca5a5;
+  cursor: pointer;
+  transition: background .2s, color .2s;
+}
+
+.logout-btn:hover {
+  background: rgba(239,68,68,.25);
+  color: #fff;
 }
 
 .badge {
@@ -75,12 +147,41 @@ textarea, input {
 }
 
 .model-btn {
-  padding: 0.75rem 1.25rem;
+  padding: 0.6rem 1rem;
   background: transparent;
   color: var(--text-muted);
   font-size: 0.8rem;
   border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .15rem;
 }
+
+.model-btn-evoprint { border-color: rgba(99,102,241,.35) !important; background: rgba(99,102,241,.06) !important; }
+.model-btn-evoprint.active {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
+  box-shadow: 0 4px 16px rgba(99,102,241,.5) !important;
+  border-color: #6366f1 !important;
+}
+.model-btn-flyerai { border-color: rgba(234,179,8,.35) !important; background: rgba(234,179,8,.06) !important; }
+.model-btn-flyerai.active {
+  background: linear-gradient(135deg, #b45309, #d97706) !important;
+  box-shadow: 0 4px 16px rgba(234,179,8,.5) !important;
+  border-color: #f59e0b !important;
+}
+
+.model-btn-paid { border-color: rgba(234,179,8,.2) !important; }
+.model-btn-paid:hover { background: rgba(234,179,8,.08) !important; }
+.model-btn-paid.active { background: linear-gradient(135deg,#b45309,#d97706) !important; box-shadow: 0 4px 12px rgba(217,119,6,.4) !important; }
+
+.model-badge {
+  font-size: .62rem;
+  font-weight: 600;
+  color: #475569;
+  letter-spacing: .3px;
+}
+.model-btn.active .model-badge { color: rgba(255,255,255,.6); }
 
 .model-btn.active {
   background: var(--primary);

@@ -42,6 +42,9 @@ const pollinationsHeaders = () => ({
   "User-Agent": "EvoPrint/1.0",
   ...(process.env.POLLINATIONS_API_KEY && { Authorization: `Bearer ${process.env.POLLINATIONS_API_KEY}` })
 });
+const pollinationsUrl = (encodedPrompt, seed) => process.env.POLLINATIONS_API_KEY
+  ? `https://gen.pollinations.ai/image/${encodedPrompt}?width=1024&height=1024&model=flux&seed=${seed}&nologo=true`
+  : `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&seed=${seed}&nologo=true`;
 
 // Health Check
 app.get("/health", (req, res) => {
@@ -292,7 +295,7 @@ app.post("/api/generate-image-evoprint", async (req, res) => {
     const styledPrompt  = `${prompt}, wikiart impressionist style, fine art painting, museum quality, oil on canvas`;
     const encodedPrompt = encodeURIComponent(styledPrompt);
     const seed          = Math.floor(Math.random() * 1000000);
-    const url           = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&seed=${seed}&nologo=true`;
+    const url           = pollinationsUrl(encodedPrompt, seed);
 
     const response = await axios.get(url, {
       responseType: "arraybuffer",
@@ -330,7 +333,7 @@ app.post("/api/generate-image-flyerai", async (req, res) => {
     // Pollinations avec trigger word LoRA
     const encodedPrompt = encodeURIComponent(enrichedPrompt);
     const seed = Math.floor(Math.random() * 1000000);
-    const url  = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&seed=${seed}&nologo=true`;
+    const url  = pollinationsUrl(encodedPrompt, seed);
 
     const response = await axios.get(url, {
       responseType: "arraybuffer",
